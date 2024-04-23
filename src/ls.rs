@@ -7,7 +7,6 @@ pub struct Arguments {
     pub storage: String,
 }
 
-
 pub fn execute(args: &Arguments) -> String {
     let storage = read_storage_from_file(&args.storage);
     serde_yaml::to_string(&storage.peers).unwrap()

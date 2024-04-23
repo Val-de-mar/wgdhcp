@@ -15,6 +15,16 @@ pub fn check_key(key: &str) -> bool {
     regex.is_match(key)
 }
 
+
+
+impl TryInto<String> for Key {
+    type Error = ();
+
+    fn try_into(self) -> Result<String, Self::Error> {
+        todo!()
+    }
+}
+
 impl Serialize for Key {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -67,17 +77,22 @@ impl FromStr for Endpoint {
     }
 }
 
+impl From<&Endpoint> for String {
+    fn from(value: &Endpoint) -> Self {
+        match value.port {
+            Some(port) => format!("{}:{}", value.host, port),
+            None => format!("{}", value.host)
+        }
+    }
+}
+
 impl Serialize for Endpoint {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {   
-        serializer.serialize_str(&
-            match self.port {
-                Some(port) => format!("{}:{}", self.host, port),
-                None => format!("{}", self.host)
-            }
-        ) 
+        let string: String = self.into();
+        serializer.serialize_str(&string) 
     }
 }
 

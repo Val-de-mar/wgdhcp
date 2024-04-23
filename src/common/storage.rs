@@ -1,12 +1,15 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::{Deref, DerefMut}};
 
 use serde::{Serialize, Deserialize};
+use tokio::io::AsyncReadExt;
 
 use super::custom::{Key, Endpoint};
 
 use std::net::IpAddr;
 use ipnet::IpNet;
 use derive_more::From;
+use lazy_static::lazy_static;
+use crate::common::config::CONFIG;
 
 
 #[derive(Serialize, Deserialize)]
@@ -65,8 +68,6 @@ pub struct Storage {
     pub peers: HashMap<String, HashMap<Key, PeerInfo>>,
 }
 
-
-
 impl Storage {
     pub fn find_ip(&self) -> Option<IpAddr> {
         let used_ips: Vec<_> = self.peers.values().flatten().map(|x| x.1.internal_addr).collect();
@@ -87,6 +88,41 @@ impl Storage {
             Ok(a) => a.clone(),
             Err(occupied) => occupied.entry.get().clone(),
         }
+    }
+}
+
+pub struct StorageLock<'a> {
+    storage: Storage,
+    lock: tokio::sync::MutexGuard<'a, ()>, 
+}
+
+impl<'a> Deref for StorageLock<'a> {
+    type Target = Storage;
+
+    fn deref(&self) -> &Self::Target {
+        &self.storage
+    }
+}
+
+impl<'a> DerefMut for StorageLock<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.storage
+    }
+}
+
+lazy_static! {
+    static ref STORAGE_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::new(()); 
+}
+
+pub async fn get_storage() -> StorageLock<'static> {
+    let lock: tokio::sync::MutexGuard<'static, ()> = STORAGE_MUTEX.lock().await;
+    let mut file = tokio::fs::File::open(&CONFIG.storage).await.unwrap();
+    let mut string = String::new();
+    file.read_to_string(&mut string).await.expect("cannot read storage");
+
+    StorageLock{
+        storage: serde_yaml::from_str(&string).unwrap(),
+        lock
     }
 }
 
