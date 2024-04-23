@@ -1,0 +1,19 @@
+[package]
+name = "wg-internal"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = {version = "4.4", features = ["derive"]}
+derive_more = "0.99.17"
+ipnet = { version = "2.9.0", features = ["serde"] }
+regex = "1.10.2"
+serde = { version = "1.0.193", features = ["derive", "std"] }
+serde_yaml = "0.9.28"
+toml = "0.8.8"
+url = { version = "2.5.0", features = ["serde"] }
+
+[features]
+nightly = []

@@ -1,0 +1,5 @@
+[Interface]
+ListenPort = 1234
+PrivateKey = "qKAgnc1MHyoTopBzU8FBfWaZQ6eh+61IRaP+ByL+fF8="
+Address = "10.10.10.10/24"
+SaveConfig = true
