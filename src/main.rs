@@ -76,6 +76,7 @@ async fn main() -> Result<(), Box<dyn Error>>{
     match args.command {
         Command::RunServer => {
             let addr = SocketAddr::new(CONFIG.service.address, CONFIG.service.port);
+            init::execute(args, query)
             let service = service::ServiceImpl{};
             Server::builder()
                 .add_service(service::DhcServiceServer::new(service))

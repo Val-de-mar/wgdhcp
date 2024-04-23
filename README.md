@@ -16,7 +16,7 @@ Warning: `/etc/wireguard/wg0.conf' is world accessible
 ```
 
 file
-```
+```conf
 [Interface]
 Address = 192.168.103.1/16
 ListenPort = 45340
