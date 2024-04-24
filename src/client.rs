@@ -4,13 +4,13 @@ use clap::Args;
 use ipnet::IpNet;
 use serde::{Serialize, Deserialize};
 
-use crate::{common::{custom::{Key, Endpoint}, wg::generate_keypair}, storing, add};
+use crate::{add, common::{custom::Endpoint, wg::{self, KeyPair}}, storing};
 use toml;
 use crate::add::Response;
 
 #[derive(Debug, Args)]
 pub struct Arguments {
-    pub ssh_host: Endpoint,
+    pub host: Endpoint,
 
     #[arg(short, long, default_value_t = {"/etc/wireguard/wg0.conf".into()})]
     pub config: String,
@@ -26,13 +26,13 @@ pub struct Arguments {
 #[serde(rename_all = "PascalCase")]
 struct Interface {
     address: IpNet,
-    private_key: Key,
+    private_key: wg::PrivateKeyBuf,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct Peer {
-    public_key: Key,
+    public_key: wg::PublicKeyBuf,
     allowed_ip: IpNet,
     endpoint: Endpoint,
     persistent_keepalive: u32,
@@ -45,7 +45,7 @@ struct ClientConfig {
     peer: Peer,
 }
 
-fn get_response(endpoint: &Endpoint, public_key: Key) -> Response {
+fn get_response(endpoint: &Endpoint, public_key: wg::PublicKeyBuf) -> Response {
     let mut args: Vec<String> = Default::default();
     args.push(format!("getaccess@{}", &endpoint.host));
     if let Some(port) = endpoint.port {
@@ -76,7 +76,7 @@ fn get_response(endpoint: &Endpoint, public_key: Key) -> Response {
 }
 
 fn gen_client_config(args: &Arguments) -> ClientConfig {
-    let pair = generate_keypair();
+    let pair = KeyPair::gen();
     let response = get_response(&args.ssh_host, pair.public);
     ClientConfig{
         interface: Interface {

@@ -1,5 +1,6 @@
 use lazy_static::lazy_static;
 use serde::Deserialize;
+use crate::common::custom::Endpoint;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -24,6 +25,7 @@ pub struct Service {
     pub address: IpAddr,
     #[serde(default = "default_port")]
     pub port: u16,
+    pub endpoint: Endpoint,
 }
 
 #[derive(Deserialize)]

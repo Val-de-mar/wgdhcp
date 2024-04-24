@@ -5,53 +5,6 @@ use regex::Regex;
 use serde::{de, ser, Deserialize, Serialize};
 use url::{Host, ParseError};
 
-#[derive(Clone, Debug, Display, From, FromStr, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Key(pub String);
-
-const VALID_KEY: &str = "[+/0-9=A-Za-z]+=";
-
-pub fn check_key(key: &str) -> bool {
-    let regex = Regex::new(&format!("^{}$", VALID_KEY)).unwrap();
-    regex.is_match(key)
-}
-
-
-
-impl TryInto<String> for Key {
-    type Error = ();
-
-    fn try_into(self) -> Result<String, Self::Error> {
-        todo!()
-    }
-}
-
-impl Serialize for Key {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use ser::Error;
-        if !check_key(&self.0) {
-            return Err(S::Error::custom(format!("invalid key: {}", self.0)));
-        }
-        self.0.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Key {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let res = String::deserialize(deserializer)?;
-        use de::Error;
-        if !check_key(&res) {
-            return Err(D::Error::custom(format!("invalid key: {}", res)));
-        }
-        Ok(Self(res))
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct Endpoint {
     pub host: Host,

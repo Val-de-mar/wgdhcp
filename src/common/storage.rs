@@ -1,20 +1,19 @@
 use std::{collections::HashMap, ops::{Deref, DerefMut}};
 
 use serde::{Serialize, Deserialize};
-use tokio::io::AsyncReadExt;
+use tokio::{fs::{self, OpenOptions}, io::{AsyncReadExt, AsyncWriteExt as _}};
 
-use super::custom::{Key, Endpoint};
+use super::custom::Endpoint;
 
 use std::net::IpAddr;
 use ipnet::IpNet;
 use derive_more::From;
 use lazy_static::lazy_static;
-use crate::common::config::CONFIG;
-
+use crate::common::{config::CONFIG, wg};
 
 #[derive(Serialize, Deserialize)]
 pub struct ServerInfo {
-    pub public_key: Key,
+    pub public_key: wg::PublicKeyBuf,
     pub endpoint: Endpoint,
 }
 
@@ -35,9 +34,8 @@ impl From<IpAddr> for PeerInfo {
 #[serde(rename_all = "PascalCase")]
 pub struct Interface {
     pub listen_port: u16,
-    pub private_key: Key,
+    pub private_key: wg::PrivateKeyBuf,
     pub address: IpNet,
-    pub save_config: bool,
 }
 
 #[derive(Serialize, From)]
@@ -49,7 +47,7 @@ pub struct WgConfigInterface<'a> {
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PeerConfig<'a> {
-    pub public_key: &'a Key,
+    pub public_key: &'a wg::PublicKeyBuf,
     #[serde(rename(serialize = "AllowedIPs"))]
     pub allowed_ips: &'a IpNet,
     pub endpoint: &'a Endpoint,
@@ -65,7 +63,7 @@ pub struct WgConfigPeer<'a> {
 pub struct Storage {
     pub interface: Interface,
     pub server: ServerInfo,
-    pub peers: HashMap<String, HashMap<Key, PeerInfo>>,
+    pub peers: HashMap<String, HashMap<wg::PublicKeyBuf, PeerInfo>>,
 }
 
 impl Storage {
@@ -80,7 +78,7 @@ impl Storage {
         }
         found
     }
-    pub fn push(&mut self, account: &str, public_key: Key, peer: PeerInfo) -> PeerInfo {
+    pub fn push(&mut self, account: &str, public_key: wg::PublicKeyBuf, peer: PeerInfo) -> PeerInfo {
         let _ = self.peers.try_insert(account.into(), Default::default());
         let peers_of_account = self.peers.get_mut(account).unwrap();
     
@@ -92,7 +90,7 @@ impl Storage {
 }
 
 pub struct StorageLock<'a> {
-    storage: Storage,
+    storage: Option<Box<Storage>>,
     lock: tokio::sync::MutexGuard<'a, ()>, 
 }
 
@@ -100,18 +98,55 @@ impl<'a> Deref for StorageLock<'a> {
     type Target = Storage;
 
     fn deref(&self) -> &Self::Target {
-        &self.storage
+        self.storage.as_deref().unwrap()
     }
 }
 
 impl<'a> DerefMut for StorageLock<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.storage
+        self.storage.as_deref_mut().unwrap()
     }
 }
 
 lazy_static! {
     static ref STORAGE_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::new(()); 
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum CommitError {
+    #[error("io error: {}", .0)]
+    IO(#[from] std::io::Error),
+    #[error("serialize error: {}", .0)]
+    Serialize(#[from] serde_yaml::Error),
+}
+
+pub async fn commit_storage(storage: &Storage) -> std::result::Result<(), CommitError> {
+    // Создаём временный файл в той же директории, что и оригинальный файл, для сохранения fs
+    let mut temp_path = CONFIG.storage.clone();
+    temp_path.set_file_name(format!("{}.tmp.dump", temp_path.file_name().map(|x| x.to_str()).flatten().expect("cannot get storage filename")));
+
+    let mut temp_file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(&temp_path)
+        .await?;
+    let result = serde_yaml::to_string(&storage)?;
+    temp_file.write_all(result.as_bytes()).await?;
+    temp_file.flush().await?;
+
+    fs::rename(&temp_path, &CONFIG.storage).await;
+
+    Ok(())
+}
+
+impl<'a> Drop for StorageLock<'a> {
+    fn drop(&mut self) {
+        let mut val = Option::<Box<Storage>>::None;
+        std::mem::swap(&mut self.storage, &mut val);
+        tokio::spawn(async move {
+            commit_storage(val.as_deref().unwrap()).await.expect("cannot commit_storage");
+        });
+    }
 }
 
 pub async fn get_storage() -> StorageLock<'static> {
@@ -121,7 +156,7 @@ pub async fn get_storage() -> StorageLock<'static> {
     file.read_to_string(&mut string).await.expect("cannot read storage");
 
     StorageLock{
-        storage: serde_yaml::from_str(&string).unwrap(),
+        storage: Some(Box::new(serde_yaml::from_str(&string).unwrap())),
         lock
     }
 }
@@ -130,7 +165,7 @@ pub fn get_interface_config(storage: &Storage) -> String {
     toml::to_string(&WgConfigInterface::from(&storage.interface)).unwrap()
 }
 
-pub fn get_peer_config(public_key: &Key, allowed_ips: &IpNet, endpoint: &Endpoint) -> String {
+pub fn get_peer_config(public_key: &wg::PublicKeyBuf, allowed_ips: &IpNet, endpoint: &Endpoint) -> String {
     toml::to_string(&WgConfigPeer{
         peer: &PeerConfig{
             public_key: public_key,

@@ -6,13 +6,12 @@ mod common;
 mod storing;
 
 // modules of commands
-mod init;
 mod add;
 mod add_key;
-mod ls;
-mod start;
 mod client;
 mod genconfig;
+mod ls;
+mod start;
 
 use std::{error::Error, net::IpAddr, net::SocketAddr, str::FromStr};
 
@@ -22,7 +21,7 @@ use regex::Regex;
 use serde_yaml;
 use tonic::transport::Server;
 
-
+pub mod commands;
 pub mod service;
 
 // #[derive(Subcommand, Debug)]
@@ -45,13 +44,16 @@ pub mod service;
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    #[command(name="runserver", about="runs server with configuration from ~/.config/wgdhcp.yaml")]
+    #[command(name = "init", about = "inits config file and storage")]
+    Init,
+    #[command(
+        name = "runserver",
+        about = "runs server with configuration from ~/.config/wgdhcp.yaml"
+    )]
     RunServer,
-    #[command(name="ls")]
-    Ls(ls::Arguments),
-    #[command(name="genconfig", about="generate wireguard configuration file for server")]
-    Gencofig(genconfig::Arguments),
-    #[command(name="client", about="sets up client config file")]
+    #[command(name = "ls")]
+    Ls,
+    #[command(name = "client", about = "gets client config file")]
     Client(client::Arguments),
 }
 
@@ -62,35 +64,30 @@ struct Arguments {
     command: Command,
 }
 
-
 fn validate_account_name(account: &str) {
     let regex = Regex::new(r"^[0-9a-zA-Z]?{3,32}$").unwrap();
-    assert!(regex.is_match(account), "account must be string of digits and letters at least 5 at most 32 characters");
+    assert!(
+        regex.is_match(account),
+        "account must be string of digits and letters at least 5 at most 32 characters"
+    );
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>>{
-
+async fn main() -> Result<(), Box<dyn Error>> {
     let args = Arguments::parse();
 
     match args.command {
         Command::RunServer => {
-            let addr = SocketAddr::new(CONFIG.service.address, CONFIG.service.port);
-            init::execute(args, query)
-            let service = service::ServiceImpl{};
-            Server::builder()
-                .add_service(service::DhcServiceServer::new(service))
-                .serve(addr)
-                .await?;
+            commands::run_server::execute().await?;
         },
         Command::Ls(args) => {
-            print!("{}", ls::execute(&args));
+            print!("{}", commands::ls::execute().await);
         },
         Command::Client(args) => {
             client::execute(&args);
         },
-        Command::Gencofig(args) => {
-            print!("{}", genconfig::execute(&args));
+        Command::Init => {
+            commands::init::execute().await?;
         },
     };
     Ok(())
