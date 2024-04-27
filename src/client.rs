@@ -1,7 +1,7 @@
 use std::{
     io::Write,
     net::IpAddr,
-    process::{self, Stdio},
+    process::{self, ExitStatus, Stdio},
 };
 
 use clap::Args;
@@ -26,10 +26,12 @@ use crate::common::proto::{
 #[derive(Debug, Args)]
 pub struct Arguments {
     #[clap(help = "wg dhc server address")]
-    pub host: Endpoint,
+    pub host: String,
     pub account: String,
     #[clap(default_value_t={"wg0".to_string()})]
     pub interface: String,
+    #[clap(default_value_t={5})]
+    pub persistent_keepalive: usize,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -55,22 +57,29 @@ struct ClientConfig {
     peer: Peer,
 }
 
+fn check(status: ExitStatus, error: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if !status.success() {
+        return Err(error.into());
+    }
+    Ok(())
+}
+
 pub async fn setup_wireguard_interface(
     private_key: &PrivateKey,
     internal_address: &str,
     args: &Arguments,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Создание интерфейса wg0
-    Command::new("ip")
+    check(Command::new("ip")
         .args(["link", "add", &args.interface, "type", "wireguard"])
         .status()
-        .await?;
+        .await?, "Failed to add interface")?;
 
     // Назначение IP адреса интерфейсу wg0
-    Command::new("ip")
+    check(Command::new("ip")
         .args(["address", "add", internal_address, "dev", &args.interface])
         .status()
-        .await?;
+        .await?, "Failed to set ip to interface")?;
 
     // Настройка приватного ключа через /dev/stdin
     let mut child = Command::new("wg")
@@ -85,21 +94,23 @@ pub async fn setup_wireguard_interface(
     stdin.flush().await?;
     let status = child.wait().await?;
 
-    // Поднятие интерфейса wg0
-    Command::new("ip")
-        .args(["link", "set", "up", "dev", &args.interface])
-        .status()
-        .await?;
-
     if !status.success() {
         return Err("Failed to set private key".into());
     }
+    // Поднятие интерфейса wg0
+    check(Command::new("ip")
+        .args(["link", "set", "up", "dev", &args.interface])
+        .status()
+        .await?, "Failed to start interface")?;
+
+
 
     Ok(())
 }
 async fn wireguard_add_peer(
     public_key: &wg::PublicKey,
     internal_address: IpNet,
+    endpoint: &str,
     args: &Arguments,
 ) -> tonic::Result<()> {
     let pub_key: String = public_key.into_base_64();
@@ -109,8 +120,12 @@ async fn wireguard_add_peer(
             &args.interface,
             "peer",
             &pub_key,
+            "endpoint",
+            endpoint,
             "allowed-ips",
             &internal_address.trunc().to_string(),
+            "persistent-keepalive",
+            &args.persistent_keepalive.to_string(),
         ])
         .status()
         .await
@@ -198,6 +213,7 @@ pub async fn execute(args: &Arguments) -> Result<(), Box<dyn std::error::Error>>
     wireguard_add_peer(
         &FromBase64::from_base_64(&response.server_public_key)?,
         response.address.parse()?,
+        &response.endpoint,
         args,
     )
     .await?;

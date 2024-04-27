@@ -12,8 +12,10 @@ use derive_more::From;
 use lazy_static::lazy_static;
 use crate::common::{config::CONFIG, wg::{self, SerdeBase64}};
 
+#[serde_as]
 #[derive(Serialize, Deserialize)]
 pub struct ServerInfo {
+    #[serde_as(as = "SerdeBase64")]
     pub public_key: wg::PublicKey,
     pub endpoint: Endpoint,
 }
@@ -75,7 +77,8 @@ pub struct Storage {
 
 impl Storage {
     pub fn find_ip(&self) -> Option<IpAddr> {
-        let used_ips: Vec<_> = self.peers.values().flatten().map(|x| x.1.internal_addr).collect();
+        let mut used_ips: Vec<_> = self.peers.values().flatten().map(|x| x.1.internal_addr).collect();
+        used_ips.push(self.interface.address.addr());
         let mut found = Option::<IpAddr>::None;
         for addr in self.interface.address.hosts() {
             if !used_ips.contains(&addr) {
@@ -98,7 +101,7 @@ impl Storage {
 
 pub struct StorageLock<'a> {
     storage: Option<Box<Storage>>,
-    lock: tokio::sync::MutexGuard<'a, ()>, 
+    _lock: tokio::sync::MutexGuard<'a, ()>, 
 }
 
 impl<'a> Deref for StorageLock<'a> {
@@ -164,7 +167,7 @@ pub async fn get_storage() -> StorageLock<'static> {
 
     StorageLock{
         storage: Some(Box::new(serde_yaml::from_str(&string).unwrap())),
-        lock
+        _lock: lock
     }
 }
 

@@ -22,14 +22,31 @@ pub struct KeyPair {
 
 impl KeyPair {
     pub fn gen() -> KeyPair {
-        let private_key: PrivateKey = PrivateKey::random_from_rng(OsRng);
-
-        let public_key: PublicKey = PublicKey::from(&private_key);
-
+        let mut rng = OsRng::default();
+        let mut private_key = PrivateKey::new(&mut rng);
+        
+        // Применяем клэмпирование для совместимости с WireGuard
+        let key_bytes = private_key.to_bytes();
+        let mut clamped = key_bytes;
+        clamped[0] &= 248;
+        clamped[31] &= 127;
+        clamped[31] |= 64;
+        let clamped_private_key = PrivateKey::from(clamped);
+    
+        let public_key = PublicKey::from(&clamped_private_key);
+    
         KeyPair {
             public: public_key,
-            private: private_key,
+            private: clamped_private_key,
         }
+        // let private_key: PrivateKey = PrivateKey::random_from_rng(OsRng);
+
+        // let public_key: PublicKey = PublicKey::from(&private_key);
+
+        // KeyPair {
+        //     public: public_key,
+        //     private: private_key,
+        // }
     }
 }
 

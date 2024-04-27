@@ -2,6 +2,7 @@ use ipnet::IpNet;
 use lazy_static::lazy_static;
 use serde::Deserialize;
 use crate::common::custom::Endpoint;
+use std::default;
 use std::net::IpAddr;
 use std::path::PathBuf;
 
@@ -21,6 +22,9 @@ fn default_internal_addr() -> IpNet {
 fn default_port() -> u16 {
     5010
 }
+fn default_wireguard_port() -> u16 {
+    55000
+}
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Service {
@@ -38,6 +42,8 @@ pub struct Config {
     pub interface: String,
     #[serde(default = "default_internal_addr")]
     pub internal_address: IpNet,
+    #[serde(default = "default_wireguard_port")]
+    pub wgport: u16,
 }
 
 fn get_config() -> Config {

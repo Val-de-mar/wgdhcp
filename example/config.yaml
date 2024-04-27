@@ -4,3 +4,4 @@ service:
   endpoint: '172.19.0.5:55000'
 storage: "/storage.yaml"
 interface: "wg0"
+listen-port: 55000
