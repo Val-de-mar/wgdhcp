@@ -1,28 +1,24 @@
-pub mod grpc {
-    tonic::include_proto!("dhcservice");
-}
 
-use std::str::FromStr;
 
-pub use grpc::{
+pub use crate::common::proto::{
     dhc_service_server::{DhcService, DhcServiceServer},
     ReserveIpRequest, ReserveIpResponse,
 };
 use ipnet::IpNet;
 use tonic::Response;
 
-use crate::common::{config::CONFIG, wg};
 use crate::common::{
+    config::CONFIG,
     storage::{self, PeerInfo},
-    wg::PublicKeyBuf,
+    wg::{self, FromBase64, IntoBase64 as _, PublicKey},
 };
 
 pub struct ServiceImpl {}
 
-async fn wireguard_add_peer(public_key: &wg::PublicKeyBuf, info: &PeerInfo) -> tonic::Result<()> {
+async fn wireguard_add_peer(public_key: &wg::PublicKey, info: &PeerInfo) -> tonic::Result<()> {
     let allowed_ips = IpNet::new(info.internal_addr.clone(), 0).unwrap();
     let allowed_ips = IpNet::new(info.internal_addr.clone(), allowed_ips.max_prefix_len()).unwrap();
-    let pub_key: String = public_key.into();
+    let pub_key: String = public_key.into_base_64();
     let status = tokio::process::Command::new("sudo")
         .args([
             "wg",
@@ -60,7 +56,7 @@ impl DhcService for ServiceImpl {
             let new_peer = PeerInfo {
                 internal_addr: ip.clone(),
             };
-            let public_key: PublicKeyBuf = FromStr::from_str(&req.public_key).map_err(|e| {
+            let public_key: PublicKey = FromBase64::from_base_64(&req.public_key).map_err(|e| {
                 tonic::Status::invalid_argument(format!("incorrect public key: {e}"))
             })?;
             let new_peer = storage.push(&req.account, public_key.clone(), new_peer.clone());
@@ -75,7 +71,7 @@ impl DhcService for ServiceImpl {
 
             ReserveIpResponse {
                 address: internal_addr.to_string(),
-                server_public_key: (&storage.server.public_key).into(),
+                server_public_key: storage.server.public_key.into_base_64(),
                 endpoint: (&storage.server.endpoint).into(),
             }
         };

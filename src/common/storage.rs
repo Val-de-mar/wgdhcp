@@ -1,6 +1,7 @@
 use std::{collections::HashMap, ops::{Deref, DerefMut}};
 
 use serde::{Serialize, Deserialize};
+use serde_with::serde_as;
 use tokio::{fs::{self, OpenOptions}, io::{AsyncReadExt, AsyncWriteExt as _}};
 
 use super::custom::Endpoint;
@@ -9,11 +10,11 @@ use std::net::IpAddr;
 use ipnet::IpNet;
 use derive_more::From;
 use lazy_static::lazy_static;
-use crate::common::{config::CONFIG, wg};
+use crate::common::{config::CONFIG, wg::{self, SerdeBase64}};
 
 #[derive(Serialize, Deserialize)]
 pub struct ServerInfo {
-    pub public_key: wg::PublicKeyBuf,
+    pub public_key: wg::PublicKey,
     pub endpoint: Endpoint,
 }
 
@@ -30,11 +31,13 @@ impl From<IpAddr> for PeerInfo {
     }
 }
 
+#[serde_as]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Interface {
     pub listen_port: u16,
-    pub private_key: wg::PrivateKeyBuf,
+    #[serde_as(as = "SerdeBase64")]
+    pub private_key: wg::PrivateKey,
     pub address: IpNet,
 }
 
@@ -44,10 +47,12 @@ pub struct WgConfigInterface<'a> {
     pub interface: &'a Interface
 }
 
+#[serde_as]
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PeerConfig<'a> {
-    pub public_key: &'a wg::PublicKeyBuf,
+    #[serde_as(as = "SerdeBase64")]
+    pub public_key: &'a wg::PublicKey,
     #[serde(rename(serialize = "AllowedIPs"))]
     pub allowed_ips: &'a IpNet,
     pub endpoint: &'a Endpoint,
@@ -59,11 +64,13 @@ pub struct WgConfigPeer<'a> {
     pub peer: &'a PeerConfig<'a>
 }
 
+#[serde_as]
 #[derive(Serialize, Deserialize)]
 pub struct Storage {
     pub interface: Interface,
     pub server: ServerInfo,
-    pub peers: HashMap<String, HashMap<wg::PublicKeyBuf, PeerInfo>>,
+    #[serde_as(as = "HashMap<_, HashMap<SerdeBase64, _>>")]
+    pub peers: HashMap<String, HashMap<wg::PublicKey, PeerInfo>>,
 }
 
 impl Storage {
@@ -78,7 +85,7 @@ impl Storage {
         }
         found
     }
-    pub fn push(&mut self, account: &str, public_key: wg::PublicKeyBuf, peer: PeerInfo) -> PeerInfo {
+    pub fn push(&mut self, account: &str, public_key: wg::PublicKey, peer: PeerInfo) -> PeerInfo {
         let _ = self.peers.try_insert(account.into(), Default::default());
         let peers_of_account = self.peers.get_mut(account).unwrap();
     
@@ -165,7 +172,7 @@ pub fn get_interface_config(storage: &Storage) -> String {
     toml::to_string(&WgConfigInterface::from(&storage.interface)).unwrap()
 }
 
-pub fn get_peer_config(public_key: &wg::PublicKeyBuf, allowed_ips: &IpNet, endpoint: &Endpoint) -> String {
+pub fn get_peer_config(public_key: &wg::PublicKey, allowed_ips: &IpNet, endpoint: &Endpoint) -> String {
     toml::to_string(&WgConfigPeer{
         peer: &PeerConfig{
             public_key: public_key,

@@ -1,8 +1,7 @@
 use std::str::FromStr;
 
-use derive_more::{Display, From, FromStr};
-use regex::Regex;
-use serde::{de, ser, Deserialize, Serialize};
+
+use serde::{Deserialize, Serialize};
 use url::{Host, ParseError};
 
 #[derive(Clone, Debug)]

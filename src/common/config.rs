@@ -1,7 +1,7 @@
+use ipnet::IpNet;
 use lazy_static::lazy_static;
 use serde::Deserialize;
 use crate::common::custom::Endpoint;
-use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
 
@@ -15,6 +15,9 @@ pub struct RepoInstance {
 fn default_addr() -> IpAddr {
     "0.0.0.0".parse().unwrap()
 }
+fn default_internal_addr() -> IpNet {
+    "10.11.0.1/16".parse().unwrap()
+}
 fn default_port() -> u16 {
     5010
 }
@@ -23,6 +26,8 @@ fn default_port() -> u16 {
 pub struct Service {
     #[serde(default = "default_addr")]
     pub address: IpAddr,
+    #[serde(default = "default_internal_addr")]
+    pub internal_address: IpNet,
     #[serde(default = "default_port")]
     pub port: u16,
     pub endpoint: Endpoint,

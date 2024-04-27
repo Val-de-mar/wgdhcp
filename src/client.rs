@@ -4,35 +4,33 @@ use clap::Args;
 use ipnet::IpNet;
 use serde::{Serialize, Deserialize};
 
-use crate::{add, common::{custom::Endpoint, wg::{self, KeyPair}}, storing};
-use toml;
+use crate::{add, common::{custom::Endpoint, wg::{self, IntoBase64, KeyPair}}};
 use crate::add::Response;
+use tonic::transport::channel::Endpoint as TEndpoint;
+
+use crate::common::proto::{
+    dhc_service_client::DhcServiceClient,
+    ReserveIpRequest, ReserveIpResponse
+};
 
 #[derive(Debug, Args)]
 pub struct Arguments {
+    #[clap(help="wg dhc server address")]
     pub host: Endpoint,
-
-    #[arg(short, long, default_value_t = {"/etc/wireguard/wg0.conf".into()})]
-    pub config: String,
-
-    #[arg(short, long)]
-    pub force: bool,
-
-    #[arg(short, long, default_value_t = 20)]
-    pub persistent_keepalive: u32,
+    pub account: String,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct Interface {
     address: IpNet,
-    private_key: wg::PrivateKeyBuf,
+    private_key: wg::PrivateKey,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct Peer {
-    public_key: wg::PublicKeyBuf,
+    public_key: wg::PublicKey,
     allowed_ip: IpNet,
     endpoint: Endpoint,
     persistent_keepalive: u32,
@@ -45,7 +43,7 @@ struct ClientConfig {
     peer: Peer,
 }
 
-fn get_response(endpoint: &Endpoint, public_key: wg::PublicKeyBuf) -> Response {
+fn get_response(endpoint: &Endpoint, public_key: wg::PublicKey) -> Response {
     let mut args: Vec<String> = Default::default();
     args.push(format!("getaccess@{}", &endpoint.host));
     if let Some(port) = endpoint.port {
@@ -75,27 +73,49 @@ fn get_response(endpoint: &Endpoint, public_key: wg::PublicKeyBuf) -> Response {
     serde_yaml::from_str(&result).expect("error parsing server response")
 }
 
-fn gen_client_config(args: &Arguments) -> ClientConfig {
-    let pair = KeyPair::gen();
-    let response = get_response(&args.ssh_host, pair.public);
-    ClientConfig{
-        interface: Interface {
-            address: response.internal_addr.clone(),
-            private_key: pair.private,
-        },
-        peer: Peer {
-            public_key: response.server_pubkey,
-            allowed_ip: response.internal_addr,
-            endpoint: response.endpoint,
-            persistent_keepalive: args.persistent_keepalive,
-        }
-    }
-}
+// fn gen_client_config(args: &Arguments) -> ClientConfig {
+//     let pair = KeyPair::gen();
+//     let response = get_response(&args.ssh_host, pair.public);
+//     ClientConfig{
+//         interface: Interface {
+//             address: response.internal_addr.clone(),
+//             private_key: pair.private,
+//         },
+//         peer: Peer {
+//             public_key: response.server_pubkey,
+//             allowed_ip: response.internal_addr,
+//             endpoint: response.endpoint,
+//             persistent_keepalive: args.persistent_keepalive,
+//         }
+//     }
+// }
 
-pub fn execute(args: &Arguments) {
-    let config = gen_client_config(args);
-    let config = toml::to_string(&config).unwrap_or_else(|err| panic!("cannot deserialize config: {}", err));
-    let mut file = storing::open_file(&args.config, args.force);
-    file.write_all(config.as_bytes()).unwrap()
+
+
+pub async fn execute(args: &Arguments) -> Result<(), Box<dyn std::error::Error>> {
+    // let config = gen_client_config(args);
+    // let config = toml::to_string(&config).unwrap_or_else(|err| panic!("cannot deserialize config: {}", err));
+    // let mut file = storing::open_file(&args.config, args.force);
+    // file.write_all(config.as_bytes()).unwrap()
+    let endpoint: String = (&args.host).into();
+    let endpoint = TEndpoint::from_shared(endpoint)?;
+    let keypair = KeyPair::gen();
+    
+    let mut client = DhcServiceClient::connect(endpoint).await?;
+    let request = ReserveIpRequest { account: args.account.clone(), public_key: keypair.public.into_base_64()};
+    let response = client.reserve_ip(request).await?;
+    let response = response.into_inner();
+
+    println!(
+"
+[Interface]\n
+[Peer]\nPublicKey = {}\nAllowedIPs = {}\nEndpoint = {}\n
+",
+    response.server_public_key,
+    response.address,
+    response.
+    )
+    
+    Ok(())
 }
 

@@ -1,22 +1,21 @@
-use std::str::FromStr;
-
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use derive_more as dm;
 use rand::rngs::OsRng;
-use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
-use x25519_dalek::{PublicKey, StaticSecret as PrivateKey};
+use serde::{de::Error as _, Deserialize, Deserializer, Serializer};
+pub use x25519_dalek::{PublicKey, StaticSecret as PrivateKey};
+
+use serde_with::{DeserializeAs, SerializeAs};
 
 #[derive(Clone)]
 pub struct KeyPair {
-    pub public: PublicKeyBuf,
-    pub private: PrivateKeyBuf,
+    pub public: PublicKey,
+    pub private: PrivateKey,
 }
 
 impl KeyPair {
     pub fn gen() -> KeyPair {
-        let private_key: PrivateKeyBuf = PrivateKey::random_from_rng(OsRng).into();
+        let private_key: PrivateKey = PrivateKey::random_from_rng(OsRng);
 
-        let public_key: PublicKeyBuf = PublicKey::from(&private_key.key).into();
+        let public_key: PublicKey = PublicKey::from(&private_key);
 
         KeyPair {
             public: public_key,
@@ -25,16 +24,128 @@ impl KeyPair {
     }
 }
 
-#[derive(dm::Into, dm::From, Clone)]
-pub struct PrivateKeyBuf {
-    key: PrivateKey,
+pub trait FromBase64 {
+    fn from_base_64(value: &str) -> Result<Self, ParseError>
+    where
+        Self: Sized;
 }
 
-impl From<&PrivateKeyBuf> for String {
-    fn from(value: &PrivateKeyBuf) -> Self {
-        STANDARD.encode(value.key.as_bytes())
+impl FromBase64 for PublicKey {
+    fn from_base_64(value: &str) -> Result<Self, ParseError> {
+        let bytes_vec = STANDARD
+            .decode(value)
+            .map_err(|_| ParseError::NotBase64(value.to_string()))?;
+        let bytes: &[u8; 32] = bytes_vec
+            .as_slice()
+            .try_into()
+            .map_err(|_| ParseError::IncorrectLength(value.to_string()))?;
+        Ok(bytes.clone().into())
     }
 }
+
+impl FromBase64 for PrivateKey {
+    fn from_base_64(value: &str) -> Result<Self, ParseError> {
+        let bytes_vec = STANDARD
+            .decode(value)
+            .map_err(|_| ParseError::NotBase64(value.to_string()))?;
+        let bytes: &[u8; 32] = bytes_vec
+            .as_slice()
+            .try_into()
+            .map_err(|_| ParseError::IncorrectLength(value.to_string()))?;
+        Ok(bytes.clone().into())
+    }
+}
+
+pub trait IntoBase64 {
+    fn into_base_64(&self) -> String;
+}
+
+impl IntoBase64 for PublicKey {
+    fn into_base_64(&self) -> String {
+        STANDARD.encode(self.as_bytes())
+    }
+}
+
+impl IntoBase64 for PrivateKey {
+    fn into_base_64(&self) -> String {
+        STANDARD.encode(self.as_bytes())
+    }
+}
+
+pub struct SerdeBase64 {}
+
+impl SerdeBase64 {
+    pub fn encode<const N: usize, T: for<'a> Into<&'a [u8; N]>>(t: T) -> String {
+        STANDARD.encode(t.into())
+    }
+}
+
+impl SerializeAs<PublicKey> for SerdeBase64 {
+    fn serialize_as<S>(source: &PublicKey, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&STANDARD.encode(&source.as_bytes()))
+    }
+}
+
+impl SerializeAs<PrivateKey> for SerdeBase64 {
+    fn serialize_as<S>(source: &PrivateKey, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&STANDARD.encode(&source.as_bytes()))
+    }
+}
+
+impl SerializeAs<&PublicKey> for SerdeBase64 {
+    fn serialize_as<S>(source: &&PublicKey, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&STANDARD.encode(&(*source).as_bytes()))
+    }
+}
+
+impl SerializeAs<&PrivateKey> for SerdeBase64 {
+    fn serialize_as<S>(source: &&PrivateKey, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&STANDARD.encode(&(*source).as_bytes()))
+    }
+}
+
+impl<'de> DeserializeAs<'de, PublicKey> for SerdeBase64 {
+    fn deserialize_as<D>(deserializer: D) -> Result<PublicKey, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+        FromBase64::from_base_64(&string).map_err(|e| D::Error::custom(format!("{e}")))
+    }
+}
+
+impl<'de> DeserializeAs<'de, PrivateKey> for SerdeBase64 {
+    fn deserialize_as<D>(deserializer: D) -> Result<PrivateKey, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+        FromBase64::from_base_64(&string).map_err(|e| D::Error::custom(format!("{e}")))
+    }
+}
+
+// #[derive(dm::Into, dm::From, Clone)]
+// pub struct PrivateKeyBuf {
+//     key: PrivateKey,
+// }
+
+// impl From<&PrivateKeyBuf> for String {
+//     fn from(value: &PrivateKeyBuf) -> Self {
+//         STANDARD.encode(value.key.as_bytes())
+//     }
+// }
 
 #[derive(thiserror::Error, Debug)]
 pub enum ParseError {
@@ -44,86 +155,85 @@ pub enum ParseError {
     IncorrectLength(String),
 }
 
-impl FromStr for PrivateKeyBuf {
-    type Err = ParseError;
+// impl FromStr for PrivateKeyBuf {
+//     type Err = ParseError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let bytes_vec = STANDARD
-            .decode(s)
-            .map_err(|_| ParseError::NotBase64(s.to_string()))?;
-        let bytes: &[u8; 32] = bytes_vec
-            .as_slice()
-            .try_into()
-            .map_err(|_| ParseError::IncorrectLength(s.to_string()))?;
-        Ok(Self{key: bytes.clone().into()})
-    }
-}
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         let bytes_vec = STANDARD
+//             .decode(s)
+//             .map_err(|_| ParseError::NotBase64(s.to_string()))?;
+//         let bytes: &[u8; 32] = bytes_vec
+//             .as_slice()
+//             .try_into()
+//             .map_err(|_| ParseError::IncorrectLength(s.to_string()))?;
+//         Ok(Self {
+//             key: bytes.clone().into(),
+//         })
+//     }
+// }
 
-impl Serialize for PrivateKeyBuf {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let s: String = self.into();
-        s.serialize(serializer)
-    }
-}
+// impl Serialize for PrivateKeyBuf {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         let s: String = self.into();
+//         s.serialize(serializer)
+//     }
+// }
 
-impl<'de> Deserialize<'de> for PrivateKeyBuf {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(deserializer)?;
-        FromStr::from_str(&string).map_err(|e|D::Error::custom(format!("{e}")))
-    }
-}
+// impl<'de> Deserialize<'de> for PrivateKeyBuf {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         let string = String::deserialize(deserializer)?;
+//         FromStr::from_str(&string).map_err(|e|D::Error::custom(format!("{e}")))
+//     }
+// }
 
-#[derive(dm::Into, dm::From, Clone, PartialEq, Eq, Hash)]
-pub struct PublicKeyBuf {
-    key: PublicKey,
-}
+// impl From<&PublicKeyBuf> for String {
+//     fn from(value: &PublicKeyBuf) -> Self {
+//         STANDARD.encode(value.key.as_bytes())
+//     }
+// }
 
-impl From<&PublicKeyBuf> for String {
-    fn from(value: &PublicKeyBuf) -> Self {
-        STANDARD.encode(value.key.as_bytes())
-    }
-}
+// impl FromStr for PublicKeyBuf {
+//     type Err = ParseError;
 
-impl FromStr for PublicKeyBuf {
-    type Err = ParseError;
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         let bytes_vec = STANDARD
+//             .decode(s)
+//             .map_err(|_| ParseError::NotBase64(s.to_string()))?;
+//         let bytes: &[u8; 32] = bytes_vec
+//             .as_slice()
+//             .try_into()
+//             .map_err(|_| ParseError::IncorrectLength(s.to_string()))?;
+//         Ok(Self {
+//             key: bytes.clone().into(),
+//         })
+//     }
+// }
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let bytes_vec = STANDARD
-            .decode(s)
-            .map_err(|_| ParseError::NotBase64(s.to_string()))?;
-        let bytes: &[u8; 32] = bytes_vec
-            .as_slice()
-            .try_into()
-            .map_err(|_| ParseError::IncorrectLength(s.to_string()))?;
-        Ok(Self{key: bytes.clone().into()})
-    }
-}
+// impl Serialize for PublicKeyBuf {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         let s: String = self.into();
+//         s.serialize(serializer)
+//     }
+// }
 
-impl Serialize for PublicKeyBuf {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let s: String = self.into();
-        s.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for PublicKeyBuf {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(deserializer)?;
-        FromStr::from_str(&string).map_err(|e|D::Error::custom(format!("{e}")))
-    }
-}
+// impl<'de> Deserialize<'de> for PublicKeyBuf {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         let string = String::deserialize(deserializer)?;
+//         FromStr::from_str(&string).map_err(|e|D::Error::custom(format!("{e}")))
+//     }
+// }
 
 // pub async fn generate_keypair() -> KeyPair {
 //     let private = process::Command::new("wg")
