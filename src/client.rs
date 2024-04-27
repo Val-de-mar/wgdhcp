@@ -1,23 +1,35 @@
-use std::{io::Write, process::{self, Stdio}};
+use std::{
+    io::Write,
+    net::IpAddr,
+    process::{self, Stdio},
+};
 
 use clap::Args;
 use ipnet::IpNet;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use tokio::{io::AsyncWriteExt, process::Command};
 
-use crate::{add, common::{custom::Endpoint, wg::{self, IntoBase64, KeyPair}}};
-use crate::add::Response;
+use crate::{
+    add,
+    common::{
+        custom::Endpoint,
+        wg::{self, IntoBase64, KeyPair, PrivateKey, PublicKey},
+    },
+};
+use crate::common::wg::FromBase64;
 use tonic::transport::channel::Endpoint as TEndpoint;
 
 use crate::common::proto::{
-    dhc_service_client::DhcServiceClient,
-    ReserveIpRequest, ReserveIpResponse
+    dhc_service_client::DhcServiceClient, ReserveIpRequest, ReserveIpResponse,
 };
 
 #[derive(Debug, Args)]
 pub struct Arguments {
-    #[clap(help="wg dhc server address")]
+    #[clap(help = "wg dhc server address")]
     pub host: Endpoint,
     pub account: String,
+    #[clap(default_value_t={"wg0".to_string()})]
+    pub interface: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -43,35 +55,110 @@ struct ClientConfig {
     peer: Peer,
 }
 
-fn get_response(endpoint: &Endpoint, public_key: wg::PublicKey) -> Response {
-    let mut args: Vec<String> = Default::default();
-    args.push(format!("getaccess@{}", &endpoint.host));
-    if let Some(port) = endpoint.port {
-        args.push("-p".into());
-        args.push(format!("{port}"))
-    }
-    let mut job = process::Command::new("ssh")
-        .args(args)
-        .stdout(Stdio::piped())
+pub async fn setup_wireguard_interface(
+    private_key: &PrivateKey,
+    internal_address: &str,
+    args: &Arguments,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Создание интерфейса wg0
+    Command::new("ip")
+        .args(["link", "add", &args.interface, "type", "wireguard"])
+        .status()
+        .await?;
+
+    // Назначение IP адреса интерфейсу wg0
+    Command::new("ip")
+        .args(["address", "add", internal_address, "dev", &args.interface])
+        .status()
+        .await?;
+
+    // Настройка приватного ключа через /dev/stdin
+    let mut child = Command::new("wg")
+        .args(["set", &args.interface, "private-key", "/dev/stdin"])
         .stdin(Stdio::piped())
-        .spawn()
-        .unwrap_or_else(|err| panic!("failed to run ssh: {}", err));
+        .spawn()?;
 
-    let query = add::Query{
-        public_key: public_key
-    };
+    let stdin = child.stdin.as_mut().ok_or("Failed to open stdin")?;
+    stdin
+        .write_all(private_key.into_base_64().as_bytes())
+        .await?;
+    stdin.flush().await?;
+    let status = child.wait().await?;
 
-    let query = serde_yaml::to_string(&query).unwrap();
+    // Поднятие интерфейса wg0
+    Command::new("ip")
+        .args(["link", "set", "up", "dev", &args.interface])
+        .status()
+        .await?;
 
-    if let Some(ref mut stdin) = job.stdin {
-        stdin.write_all(query.as_bytes()).unwrap();
+    if !status.success() {
+        return Err("Failed to set private key".into());
     }
-    let out = job.wait_with_output(). unwrap_or_else(|err| panic!("failed to run ssh: {}", err));
 
-    assert!(out.status.success(), "ssh failed with exit status: {}\n stderr:\n{:?}", &out.status, unsafe{String::from_utf8_unchecked(out.stderr)});
-    let result = String::from_utf8(out.stdout).expect("cannot read output of ssh request");
-    serde_yaml::from_str(&result).expect("error parsing server response")
+    Ok(())
 }
+async fn wireguard_add_peer(
+    public_key: &wg::PublicKey,
+    internal_address: IpNet,
+    args: &Arguments,
+) -> tonic::Result<()> {
+    let pub_key: String = public_key.into_base_64();
+    let status = tokio::process::Command::new("wg")
+        .args([
+            "set",
+            &args.interface,
+            "peer",
+            &pub_key,
+            "allowed-ips",
+            &internal_address.trunc().to_string(),
+        ])
+        .status()
+        .await
+        .map_err(|err| tonic::Status::internal(format!("failed to run wg: {}", err)))?;
+
+    if !status.success() {
+        return Err(tonic::Status::internal(format!(
+            "wg finished with {status}"
+        )));
+    }
+    Ok(())
+}
+// fn get_response(endpoint: &Endpoint, public_key: wg::PublicKey) -> Response {
+//     let mut args: Vec<String> = Default::default();
+//     args.push(format!("getaccess@{}", &endpoint.host));
+//     if let Some(port) = endpoint.port {
+//         args.push("-p".into());
+//         args.push(format!("{port}"))
+//     }
+//     let mut job = process::Command::new("ssh")
+//         .args(args)
+//         .stdout(Stdio::piped())
+//         .stdin(Stdio::piped())
+//         .spawn()
+//         .unwrap_or_else(|err| panic!("failed to run ssh: {}", err));
+
+//     let query = add::Query {
+//         public_key: public_key,
+//     };
+
+//     let query = serde_yaml::to_string(&query).unwrap();
+
+//     if let Some(ref mut stdin) = job.stdin {
+//         stdin.write_all(query.as_bytes()).unwrap();
+//     }
+//     let out = job
+//         .wait_with_output()
+//         .unwrap_or_else(|err| panic!("failed to run ssh: {}", err));
+
+//     assert!(
+//         out.status.success(),
+//         "ssh failed with exit status: {}\n stderr:\n{:?}",
+//         &out.status,
+//         unsafe { String::from_utf8_unchecked(out.stderr) }
+//     );
+//     let result = String::from_utf8(out.stdout).expect("cannot read output of ssh request");
+//     serde_yaml::from_str(&result).expect("error parsing server response")
+// }
 
 // fn gen_client_config(args: &Arguments) -> ClientConfig {
 //     let pair = KeyPair::gen();
@@ -90,8 +177,6 @@ fn get_response(endpoint: &Endpoint, public_key: wg::PublicKey) -> Response {
 //     }
 // }
 
-
-
 pub async fn execute(args: &Arguments) -> Result<(), Box<dyn std::error::Error>> {
     // let config = gen_client_config(args);
     // let config = toml::to_string(&config).unwrap_or_else(|err| panic!("cannot deserialize config: {}", err));
@@ -100,22 +185,22 @@ pub async fn execute(args: &Arguments) -> Result<(), Box<dyn std::error::Error>>
     let endpoint: String = (&args.host).into();
     let endpoint = TEndpoint::from_shared(endpoint)?;
     let keypair = KeyPair::gen();
-    
+
     let mut client = DhcServiceClient::connect(endpoint).await?;
-    let request = ReserveIpRequest { account: args.account.clone(), public_key: keypair.public.into_base_64()};
+    let request = ReserveIpRequest {
+        account: args.account.clone(),
+        public_key: keypair.public.into_base_64(),
+    };
     let response = client.reserve_ip(request).await?;
     let response = response.into_inner();
 
-    println!(
-"
-[Interface]\n
-[Peer]\nPublicKey = {}\nAllowedIPs = {}\nEndpoint = {}\n
-",
-    response.server_public_key,
-    response.address,
-    response.
+    setup_wireguard_interface(&keypair.private, &response.address, args).await?;
+    wireguard_add_peer(
+        &FromBase64::from_base_64(&response.server_public_key)?,
+        response.address.parse()?,
+        args,
     )
-    
+    .await?;
+
     Ok(())
 }
-

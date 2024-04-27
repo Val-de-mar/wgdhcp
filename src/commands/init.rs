@@ -8,7 +8,7 @@ pub async fn execute() -> std::result::Result<(), CommitError> {
         interface: Interface {
             listen_port: CONFIG.service.port.clone(),
             private_key: keypair.private,
-            address: CONFIG.service.internal_address.clone()
+            address: CONFIG.internal_address.clone()
         },
         server: ServerInfo{
             public_key: keypair.public,

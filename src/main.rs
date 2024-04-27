@@ -10,7 +10,6 @@ mod add;
 mod add_key;
 mod client;
 mod genconfig;
-mod ls;
 mod start;
 
 use std::{error::Error, net::IpAddr, net::SocketAddr, str::FromStr};
@@ -80,11 +79,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Command::RunServer => {
             commands::run_server::execute().await?;
         },
-        Command::Ls(args) => {
+        Command::Ls => {
             print!("{}", commands::ls::execute().await);
         },
         Command::Client(args) => {
-            client::execute(&args);
+            client::execute(&args).await?;
         },
         Command::Init => {
             commands::init::execute().await?;

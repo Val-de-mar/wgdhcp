@@ -26,8 +26,6 @@ fn default_port() -> u16 {
 pub struct Service {
     #[serde(default = "default_addr")]
     pub address: IpAddr,
-    #[serde(default = "default_internal_addr")]
-    pub internal_address: IpNet,
     #[serde(default = "default_port")]
     pub port: u16,
     pub endpoint: Endpoint,
@@ -38,6 +36,8 @@ pub struct Config {
     pub service: Service,
     pub storage: PathBuf,
     pub interface: String,
+    #[serde(default = "default_internal_addr")]
+    pub internal_address: IpNet,
 }
 
 fn get_config() -> Config {

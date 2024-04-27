@@ -19,15 +19,11 @@ async fn wireguard_add_peer(public_key: &wg::PublicKey, info: &PeerInfo) -> toni
     let allowed_ips = IpNet::new(info.internal_addr.clone(), 0).unwrap();
     let allowed_ips = IpNet::new(info.internal_addr.clone(), allowed_ips.max_prefix_len()).unwrap();
     let pub_key: String = public_key.into_base_64();
-    let status = tokio::process::Command::new("sudo")
+    let status = tokio::process::Command::new("wg")
         .args([
-            "wg",
-            "set",
-            &CONFIG.interface,
-            "peer",
-            &pub_key,
-            "allowed-ips",
-            &allowed_ips.to_string(),
+            "set", &CONFIG.interface, 
+            "peer", &pub_key, 
+            "allowed-ips", &allowed_ips.to_string()
         ])
         .status()
         .await
