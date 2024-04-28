@@ -40,5 +40,11 @@ wgdhc client 'http://service_ip:port' <account>
 удобный способ попробовать - docker контейнеры,
 все необходимое лежит в `docker`, демонстрацию можно запустить оттуда командой `docker-compose up` и подключиться к двум контенерам-клиентам через `docker exec -it <container> bash`
 
-## Лицензия
-MIT
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+### MIT License Summary
+
+The MIT License is a permissive license that is short and to the point. It lets people do anything they want with your code as long as they provide attribution back to you and don’t hold you liable.
+
