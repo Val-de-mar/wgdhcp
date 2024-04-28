@@ -1,17 +1,9 @@
+use crate::common::custom::Endpoint;
 use ipnet::IpNet;
 use lazy_static::lazy_static;
 use serde::Deserialize;
-use crate::common::custom::Endpoint;
-use std::default;
 use std::net::IpAddr;
 use std::path::PathBuf;
-
-#[derive(Deserialize, Clone, Debug)]
-pub struct RepoInstance {
-    pub mountpoint: PathBuf,
-    pub ide: PathBuf,
-    pub profile: Option<String>,
-}
 
 fn default_addr() -> IpAddr {
     "0.0.0.0".parse().unwrap()
@@ -47,7 +39,7 @@ pub struct Config {
 }
 
 fn get_config() -> Config {
-    let config = shellexpand::tilde("~/.config/wgdhcp.yaml").to_string();
+    let config = shellexpand::tilde("~/.config/wgdhc.yaml").to_string();
     let file = std::fs::File::open(&config).unwrap();
     serde_yaml::from_reader(&file)
         .map_err(|error| panic!("cannot read config file with error {}", error))

@@ -1,58 +1,29 @@
-#![feature(file_create_new)]
 #![feature(map_try_insert)]
 #![feature(string_remove_matches)]
 
 mod common;
-mod storing;
 
-// modules of commands
-mod add;
-mod add_key;
 mod client;
-mod genconfig;
-mod start;
 
-use std::{error::Error, net::IpAddr, net::SocketAddr, str::FromStr};
+use std::error::Error;
 
 use clap::{Parser, Subcommand};
-use common::config::CONFIG;
-use regex::Regex;
-use serde_yaml;
-use tonic::transport::Server;
 
 pub mod commands;
 pub mod service;
 
-// #[derive(Subcommand, Debug)]
-// enum Command {
-//     #[command(name="add-peer", about="adds peer to configuration and returns information for client")]
-//     Add(add::Arguments),
-//     #[command(name="init", about="inits config file and storage")]
-//     Init(init::Arguments),
-//     #[command(name="add-key", about="adds public key to the account, key is to be delivered by stdin")]
-//     AddKey(add_key::Arguments),
-//     #[command(name="ls")]
-//     Ls(ls::Arguments),
-//     #[command(name="start", about="starts wireguard service")]
-//     Start(start::Arguments),
-//     #[command(name="genconfig", about="generate wireguard configuration file for server")]
-//     Gencofig(genconfig::Arguments),
-//     #[command(name="client", about="sets up client config file")]
-//     Client(client::Arguments),
-// }
-
 #[derive(Subcommand, Debug)]
 enum Command {
-    #[command(name = "init", about = "inits config file and storage")]
+    #[command(name = "init", about = "inits storage, has to be run before runserver")]
     Init,
     #[command(
         name = "runserver",
-        about = "runs server with configuration from ~/.config/wgdhcp.yaml"
+        about = "runs server with configuration from ~/.config/wgdhc.yaml"
     )]
     RunServer,
-    #[command(name = "ls")]
+    #[command(name = "ls", about = "lists all profiles(works on server only)")]
     Ls,
-    #[command(name = "client", about = "gets client config file")]
+    #[command(name = "client", about = "inits client wg peer")]
     Client(client::Arguments),
 }
 
@@ -63,14 +34,6 @@ struct Arguments {
     command: Command,
 }
 
-fn validate_account_name(account: &str) {
-    let regex = Regex::new(r"^[0-9a-zA-Z]?{3,32}$").unwrap();
-    assert!(
-        regex.is_match(account),
-        "account must be string of digits and letters at least 5 at most 32 characters"
-    );
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Arguments::parse();
@@ -78,16 +41,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match args.command {
         Command::RunServer => {
             commands::run_server::execute().await?;
-        },
+        }
         Command::Ls => {
             print!("{}", commands::ls::execute().await);
-        },
+        }
         Command::Client(args) => {
             client::execute(&args).await?;
-        },
+        }
         Command::Init => {
             commands::init::execute().await?;
-        },
+        }
     };
     Ok(())
 }

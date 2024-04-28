@@ -1,6 +1,0 @@
-endpoint: 192.168.145.12:1234
-listen_port: 1234
-public_key: public=
-private_key: private=
-address: 10.10.10.10/24
-save_config: true

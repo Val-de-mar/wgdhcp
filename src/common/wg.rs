@@ -1,18 +1,9 @@
-use std::process::Stdio;
-
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use ipnet::IpNet;
 use rand::rngs::OsRng;
 use serde::{de::Error as _, Deserialize, Deserializer, Serializer};
 pub use x25519_dalek::{PublicKey, StaticSecret as PrivateKey};
 
 use serde_with::{DeserializeAs, SerializeAs};
-use tokio::process::Command;
-use tokio::io::AsyncWriteExt;
-
-use super::config::CONFIG;
-
-
 
 #[derive(Clone)]
 pub struct KeyPair {
@@ -22,9 +13,8 @@ pub struct KeyPair {
 
 impl KeyPair {
     pub fn gen() -> KeyPair {
-        let mut rng = OsRng::default();
-        let mut private_key = PrivateKey::new(&mut rng);
-        
+        let private_key: PrivateKey = PrivateKey::random_from_rng(OsRng);
+
         // Применяем клэмпирование для совместимости с WireGuard
         let key_bytes = private_key.to_bytes();
         let mut clamped = key_bytes;
@@ -32,21 +22,13 @@ impl KeyPair {
         clamped[31] &= 127;
         clamped[31] |= 64;
         let clamped_private_key = PrivateKey::from(clamped);
-    
+
         let public_key = PublicKey::from(&clamped_private_key);
-    
+
         KeyPair {
             public: public_key,
             private: clamped_private_key,
         }
-        // let private_key: PrivateKey = PrivateKey::random_from_rng(OsRng);
-
-        // let public_key: PublicKey = PublicKey::from(&private_key);
-
-        // KeyPair {
-        //     public: public_key,
-        //     private: private_key,
-        // }
     }
 }
 
@@ -99,12 +81,6 @@ impl IntoBase64 for PrivateKey {
 }
 
 pub struct SerdeBase64 {}
-
-impl SerdeBase64 {
-    pub fn encode<const N: usize, T: for<'a> Into<&'a [u8; N]>>(t: T) -> String {
-        STANDARD.encode(t.into())
-    }
-}
 
 impl SerializeAs<PublicKey> for SerdeBase64 {
     fn serialize_as<S>(source: &PublicKey, serializer: S) -> Result<S::Ok, S::Error>

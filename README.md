@@ -1,30 +1,44 @@
-# wgdhcp
+# WireGuard Management Utility wgdhc
 
-log
+## Описание
+
+Эта утилита предназначена для автоматического управления Wireguard. Есть выделенный сервер, который заведует адресами и автоматически добавляет пиры по запросу. Так же реализован клиент но в случае необходимости его можно полностью заменить, поскольку все взаимодействие идет через grpc описанный в `./proto`
+
+## Возможности
+
+- **Инициализация конфигурации**: Создает начальное хранилище из конфигурационного файла `~/.config/wgdhc.yaml`.
+- **Запуск сервера**: Запускает сервер WireGuard на основе данных из хранилища и из цонфигурационного файла `~/.config/wgdhc.yaml`.
+- **Просмотр данныз**: Отображает сохраненные профили сервиса.
+- **Клиентская команда**: совершает запрос к серверу и инициализмрует интерфейс wg.
+
+## Установка
+Cборка проекта производится с помощью `cargo` с toolchain nightly.
+шаги:
+ - [установить rust](https://www.rust-lang.org/tools/install)
+ - установить nightly с помощью `rustup override set nightly` в папке проекта
+ - собрать коммандой `cargo build --release`
+ - в `./target/release/` будет лежать исполняемый файл `wgdhc`
+
+## Использование
+утилита предназначена только для работы на linux
+
+для корректной работы сервера требуются дополнительные настроки системы (sysctl)
 ```
-/wg/client # wg-quick up wg0
-Warning: `/etc/wireguard/wg0.conf' is world accessible
-[#] ip link add wg0 type wireguard
-[#] wg setconf wg0 /dev/fd/63
-[#] ip -4 address add 192.168.103.1/16 dev wg0
-[#] ip link set mtu 1420 up dev wg0
-[#] iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE;iptables -A FORWARD -o wg0 -j ACCEPT
-/wg/client # wg-quick down wg0
-Warning: `/etc/wireguard/wg0.conf' is world accessible
-[#] ip link delete dev wg0
-[#] iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE;iptables -D FORWARD -o wg0 -j ACCEPT
+net.ipv4.ip_forward=1
+net.ipv6.conf.all.forwarding=1
+```
+после чего необходимо создать конфигурационный файл `~/.config/wgdhc.yaml`
+
+
+для корректной работы клиента требуется только wg
+```
+wgdhc client 'http://service_ip:port' <account>
 ```
 
-file
-```conf
-[Interface]
-Address = 192.168.103.1/16
-ListenPort = 45340
-PrivateKey = <server private key value> # the key from the previously generated privatekey file
-PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE;iptables -A FORWARD -o %i -j ACCEPT
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE;iptables -D FORWARD -o %i -j ACCEPT
+конкретные команды и их аргументы можно посмотреть через `--help`
 
-[Peer]
-PublicKey = <client public key value> # obtained from client device via wireguard connection setup process
-AllowedIPs = 192.168.103.2/16
-```
+удобный способ попробовать - docker контейнеры,
+все необходимое лежит в `docker`, демонстрацию можно запустить оттуда командой `docker-compose up` и подключиться к двум контенерам-клиентам через `docker exec -it <container> bash`
+
+## Лицензия
+MIT

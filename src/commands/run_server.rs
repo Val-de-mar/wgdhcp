@@ -1,6 +1,5 @@
 use crate::common::storage::get_storage;
 use crate::common::wg::{IntoBase64, PrivateKey};
-use ipnet::IpNet;
 use std::net::SocketAddr;
 use std::process::{ExitStatus, Stdio};
 use tokio::io::AsyncWriteExt;
@@ -44,8 +43,14 @@ pub async fn setup_wireguard_interface(
     )?;
     // Настройка приватного ключа через /dev/stdin
     let mut child = Command::new("wg")
-        .args(["set", &CONFIG.interface, "private-key", "/dev/stdin", "listen-port",
-        &CONFIG.wgport.to_string()])
+        .args([
+            "set",
+            &CONFIG.interface,
+            "private-key",
+            "/dev/stdin",
+            "listen-port",
+            &CONFIG.wgport.to_string(),
+        ])
         .stdin(Stdio::piped())
         .spawn()?;
 

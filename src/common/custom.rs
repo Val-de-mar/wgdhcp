@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-
 use serde::{Deserialize, Serialize};
 use url::{Host, ParseError};
 
@@ -20,7 +19,10 @@ impl FromStr for Endpoint {
             None => (s, None),
         };
         let host = url::Host::parse(host)?;
-        let port: Option<u16> = port.map(|x| x.parse()).transpose().map_err(|_| ParseError::InvalidPort)?;
+        let port: Option<u16> = port
+            .map(|x| x.parse())
+            .transpose()
+            .map_err(|_| ParseError::InvalidPort)?;
 
         Ok(Endpoint {
             host: host,
@@ -33,7 +35,7 @@ impl From<&Endpoint> for String {
     fn from(value: &Endpoint) -> Self {
         match value.port {
             Some(port) => format!("{}:{}", value.host, port),
-            None => format!("{}", value.host)
+            None => format!("{}", value.host),
         }
     }
 }
@@ -42,9 +44,9 @@ impl Serialize for Endpoint {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
-    {   
+    {
         let string: String = self.into();
-        serializer.serialize_str(&string) 
+        serializer.serialize_str(&string)
     }
 }
 
@@ -56,7 +58,7 @@ impl<'de> Deserialize<'de> for Endpoint {
         use serde::de::Error;
         let string = String::deserialize(deserializer)?;
         let gen_error = |_| D::Error::custom(format!("cannot parse endpoint '{}'", &string));
-        
+
         Self::from_str(&string).map_err(gen_error)
     }
 }
