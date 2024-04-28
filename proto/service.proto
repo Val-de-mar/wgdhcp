@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package dhcservice;
+
+service DHCService {
+  rpc ReserveIp(ReserveIpRequest) returns (ReserveIpResponse) {}
+}
+
+message ReserveIpRequest {
+    string account = 1;
+    string public_key = 2;
+}
+
+message ReserveIpResponse {
+    string address = 1;
+    string server_public_key = 2;
+    string endpoint = 3;
+}

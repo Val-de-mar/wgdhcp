@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  dhc-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./config:/root/.config
+    networks:
+      - internal
+    cap_add:
+      - NET_ADMIN  # Добавление capability для администрирования сети
+    sysctls:
+      - net.ipv4.ip_forward=1  # Включение перенаправления IPv4
+      - net.ipv6.conf.all.forwarding=1  # Включение перенаправления IPv6
+    command: ["sh", "-c", "/wgdhc init && /wgdhc runserver"]
+  dhc-client:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    deploy:
+      replicas: 2
+    networks:
+      - internal
+    cap_add:
+      - NET_ADMIN  # Добавление capability для администрирования сети
+    depends_on:
+      - dhc-server
+    command: ["sh", "-c", "/wgdhc client 'http://dhc-server:55010' aboba && sleep infinity"]
+
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  data:
+    driver: local
